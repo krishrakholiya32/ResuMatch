@@ -1,4 +1,4 @@
-"""FitCheck — Resume <-> Job Description fit checker, Streamlit app.
+"""ResuMatch — Resume <-> Job Description fit checker, Streamlit app.
 
 Scores how well a resume matches a job description across 3 classes
 (No Fit / Potential Fit / Good Fit) using a self-trained DistilBERT
@@ -91,9 +91,9 @@ def _verdict_style(top_label: str):
 
 # ── UI ──────────────────────────────────────────────────────────────────────
 
-st.set_page_config(page_title="FitCheck", page_icon="🎯", layout="centered")
+st.set_page_config(page_title="ResuMatch", page_icon="🎯", layout="centered")
 
-st.title("🎯 FitCheck — Resume/JD Fit Scorer")
+st.title("🎯 ResuMatch — Resume/JD Fit Scorer")
 st.markdown(
     "Upload your resume and paste a job description to get a **fit score** "
     "(No Fit / Potential Fit / Good Fit) before you apply."
@@ -145,5 +145,5 @@ if check:
 st.divider()
 st.caption(
     "Self-trained DistilBERT + ONNX Runtime · "
-    "[GitHub](https://github.com/krishrakholiya32/FitCheck)"
+    "[GitHub](https://github.com/krishrakholiya32/ResuMatch)"
 )

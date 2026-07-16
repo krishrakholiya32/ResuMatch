@@ -1,4 +1,4 @@
-# 🎯 FitCheck
+# 🎯 ResuMatch
 
 A Streamlit web app that scores how well a resume matches a job description — **No Fit / Potential Fit / Good Fit** — using a self-trained DistilBERT classifier.
 

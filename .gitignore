@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Model checkpoints (track only the exported ONNX + tokenizer + labels, not HF checkpoints)
+training/runs/
+# Allow the deployed model artifacts
+!models/*.onnx
+!models/tokenizer.json
+!models/labels.json
+
+# Training data (large, regenerable via prepare_dataset.py)
+training/data/
+
+# Env
+.env
+
+# Zip archives from Kaggle downloads
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db

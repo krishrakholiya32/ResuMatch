@@ -6,14 +6,31 @@ A Streamlit web app that scores how well a resume matches a job description — 
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-red)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> **Status: trained and ready to run.** See [Model Performance](#-model-performance) below —
-> including a real data-leakage finding worth reading before trusting the headline number.
+**[🚀 Live Demo → resumatch-zrik.streamlit.app](https://resumatch-zrik.streamlit.app/)**
+
+> See [Model Performance](#-model-performance) below — including a real data-leakage finding
+> worth reading before trusting the headline number.
+
+---
+
+<table>
+  <tr>
+    <td><img src="screenshots/1-upload.png" alt="Upload page" width="100%"></td>
+    <td><img src="screenshots/2-result.png" alt="Fit score result" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Upload — resume file, JD upload or paste</em></td>
+    <td align="center"><em>Result — fit verdict and per-class probabilities</em></td>
+  </tr>
+</table>
 
 ---
 
 ## ✨ Features
 
-- 📄 Upload a resume (PDF / DOCX / TXT), paste a job description
+- 📄 Upload a resume (PDF / DOCX / TXT); upload the JD too, or paste its text (or both)
+- 🧩 Full resume/JD text is read in chunks and averaged, not just the first ~350/150 tokens
+- 🤔 Flags close calls (top two classes within 10%) instead of showing a falsely confident verdict
 - 🎯 3-class fit score with confidence bars
 - ⚡ Runs on CPU — no GPU needed for inference
 
@@ -101,11 +118,15 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ## ⚙️ How It Works
 
-1. Upload a resume — text is extracted (PDF/DOCX/TXT) and truncated to the first 350 tokens
-   (resumes front-load the most relevant info: summary, recent experience)
-2. Paste a job description — truncated to the first 150 tokens
-3. Both are combined as `[CLS] resume [SEP] jd [SEP]` and run through the ONNX model
-4. The 3-class probability distribution is shown, with the top class as the verdict
+1. Upload a resume (PDF/DOCX/TXT) and provide a JD — upload a file, paste text, or both
+   (if both are filled, they're combined into one JD and you're warned about it)
+2. Resume and JD text are each split into token-budget chunks (350 / 150 tokens — DistilBERT's
+   512-token limit) and every chunk pairing is scored as `[CLS] resume-chunk [SEP] jd-chunk [SEP]`,
+   then averaged — so the full documents are read, not just the first slice
+3. If the top two predicted classes are within 10 percentage points, a "close call" banner is
+   shown instead of a confident verdict — a near-tie is the model being honestly uncertain, not
+   quietly leaning one way
+4. Otherwise, the top class is shown as the verdict, with all three class probabilities as bars
 
 ---
 

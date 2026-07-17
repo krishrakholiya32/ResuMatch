@@ -148,6 +148,11 @@ if check:
     elif not (jd_file or jd_text.strip()):
         st.warning("Upload a JD file or paste the job description text.")
     else:
+        if jd_file and jd_text.strip():
+            st.warning(
+                "Both a JD file and pasted JD text are filled in — they'll be combined into "
+                "one job description. If these are two different jobs, clear one first."
+            )
         resume_text = _extract_text(resume_file)
         jd_source = "\n\n".join(t for t in [_extract_text(jd_file) if jd_file else "", jd_text] if t.strip())
         if not resume_text.strip():

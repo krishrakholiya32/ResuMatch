@@ -112,7 +112,7 @@ def _verdict_style(top_label: str):
 # Below this margin between the top-1 and top-2 class, treat it as a toss-up rather than a
 # confident verdict -- a 50.8% vs 44.9% split is the model genuinely unsure, not "leaning
 # Potential Fit," and showing a bold single-class banner in that case is misleading.
-UNCERTAIN_MARGIN = 0.15
+UNCERTAIN_MARGIN = 0.10
 
 
 # ── UI ──────────────────────────────────────────────────────────────────────

@@ -2,8 +2,13 @@
 
 Source: cnamuangtoun/resume-job-description-fit (6,241 train / 1,759 test rows,
 columns: resume_text, job_description_text, label in {No Fit, Potential Fit, Good Fit}).
-The published test.csv is kept untouched as the final holdout; val.csv is a
-stratified slice of train.csv so hyperparameters are never tuned against test.
+The published test.csv is kept untouched as the final holdout. val.csv is a GROUP split
+by job_description_text (not a plain row-level stratified split) -- train.csv only has 279
+unique JDs reused across 5,304 rows, so a naive random split put ~all of val's JDs into
+train too (just paired with different resumes), inflating val accuracy on a task the model
+had effectively already seen. Grouping by JD keeps val's job descriptions fully disjoint
+from train's, matching how the official test.csv is already structured, so val now measures
+genuine generalization to unseen JDs instead of "new resume, already-seen JD."
 
 Usage (Kaggle notebook, internet enabled):
     python prepare_dataset.py --output_dir /kaggle/working/data
@@ -17,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 from huggingface_hub import hf_hub_download
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 
 REPO_ID = "cnamuangtoun/resume-job-description-fit"
 
@@ -60,10 +65,17 @@ def main():
 
     assert set(full_train["label"].unique()) <= set(LABELS), "unexpected label values"
 
-    train, val = train_test_split(
-        full_train, test_size=args.val_size, random_state=args.seed, stratify=full_train["label"]
-    )
-    print(f"split: train={len(train)} val={len(val)} test={len(test)}")
+    splitter = GroupShuffleSplit(n_splits=1, test_size=args.val_size, random_state=args.seed)
+    train_idx, val_idx = next(splitter.split(full_train, groups=full_train["job_description_text"]))
+    train, val = full_train.iloc[train_idx], full_train.iloc[val_idx]
+
+    train_jds = set(train["job_description_text"])
+    val_jds = set(val["job_description_text"])
+    overlap = train_jds & val_jds
+    assert not overlap, f"group split failed: {len(overlap)} job descriptions leaked into both train and val"
+
+    print(f"split: train={len(train)} val={len(val)} test={len(test)} "
+          f"(train JDs={len(train_jds)}, val JDs={len(val_jds)}, overlap={len(overlap)})")
 
     train.to_csv(args.output_dir / "train.csv", index=False)
     val.to_csv(args.output_dir / "val.csv", index=False)

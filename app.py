@@ -64,8 +64,23 @@ def _softmax(x: np.ndarray) -> np.ndarray:
     return e / e.sum()
 
 
+def _chunk(ids: list[int], size: int) -> list[list[int]]:
+    if not ids:
+        return [[]]
+    return [ids[i:i + size] for i in range(0, len(ids), size)]
+
+
 def predict(resume_text: str, jd_text: str) -> list[tuple[str, float]]:
-    """Return (label, probability) pairs in label order."""
+    """Return (label, probability) pairs in label order.
+
+    The model was trained on a fixed 350/150-token front slice of each document (DistilBERT's
+    512-token limit leaves no room to raise that budget directly). Rather than silently
+    dropping everything past that slice, both documents are split into token-budget-sized
+    chunks and every resume-chunk/JD-chunk pairing is scored, then averaged -- so the full
+    text is actually read, not just the first ~350/150 tokens. Chunks past the first one are
+    somewhat out-of-distribution for the model (it never saw "resume, paragraph 3" during
+    training), so treat this as a genuine mitigation, not a full fix for the token limit.
+    """
     session = _load_session()
     tokenizer = _load_tokenizer()
     labels = _load_labels()
@@ -73,16 +88,21 @@ def predict(resume_text: str, jd_text: str) -> list[tuple[str, float]]:
     cls_id = tokenizer.token_to_id("[CLS]")
     sep_id = tokenizer.token_to_id("[SEP]")
 
-    resume_ids = tokenizer.encode(resume_text, add_special_tokens=False).ids[:RESUME_MAX_TOKENS]
-    jd_ids = tokenizer.encode(jd_text, add_special_tokens=False).ids[:JD_MAX_TOKENS]
-    input_ids = [cls_id] + resume_ids + [sep_id] + jd_ids + [sep_id]
+    resume_chunks = _chunk(tokenizer.encode(resume_text, add_special_tokens=False).ids, RESUME_MAX_TOKENS)
+    jd_chunks = _chunk(tokenizer.encode(jd_text, add_special_tokens=False).ids, JD_MAX_TOKENS)
 
-    input_ids_arr = np.array([input_ids], dtype=np.int64)
-    attention_mask = np.ones_like(input_ids_arr)
+    all_probs = []
+    for i in range(max(len(resume_chunks), len(jd_chunks))):
+        r_ids = resume_chunks[i % len(resume_chunks)]
+        j_ids = jd_chunks[i % len(jd_chunks)]
+        input_ids = [cls_id] + r_ids + [sep_id] + j_ids + [sep_id]
+        input_ids_arr = np.array([input_ids], dtype=np.int64)
+        attention_mask = np.ones_like(input_ids_arr)
+        logits = session.run(["logits"], {"input_ids": input_ids_arr, "attention_mask": attention_mask})[0][0]
+        all_probs.append(_softmax(logits))
 
-    logits = session.run(["logits"], {"input_ids": input_ids_arr, "attention_mask": attention_mask})[0][0]
-    probs = _softmax(logits)
-    return list(zip(labels, (float(p) for p in probs)))
+    avg_probs = np.mean(all_probs, axis=0)
+    return list(zip(labels, (float(p) for p in avg_probs)))
 
 
 def _verdict_style(top_label: str):
@@ -105,8 +125,10 @@ with st.expander("ℹ️ About this model & limitations"):
         "([cnamuangtoun/resume-job-description-fit](https://huggingface.co/datasets/cnamuangtoun/resume-job-description-fit))\n"
         "- 3-class fit scoring with class-weighted loss to handle label imbalance\n\n"
         "**Important limitations:**\n"
-        "- Only reads the first ~350 tokens of your resume and ~150 tokens of the JD — "
-        "put your most relevant info up front\n"
+        "- The model itself only sees 350 resume tokens / 150 JD tokens per pass (DistilBERT's "
+        "512-token limit) — the app works around this by chunking your full resume/JD and "
+        "averaging across chunks, but chunks past the first are somewhat out-of-distribution "
+        "for the model (it was only trained on front-of-document text)\n"
         "- A text-similarity signal, not a hiring decision — always tailor your actual application\n"
         "- Trained on English-language resumes/JDs only"
     )
@@ -115,32 +137,40 @@ col1, col2 = st.columns(2)
 with col1:
     resume_file = st.file_uploader("Upload your resume", type=["pdf", "docx", "txt"])
 with col2:
-    jd_text = st.text_area("Paste the job description", height=200, placeholder="Paste the full JD text here…")
+    jd_file = st.file_uploader("Upload the JD (optional)", type=["pdf", "docx", "txt"])
+    jd_text = st.text_area("...or paste the job description", height=150, placeholder="Paste the full JD text here…")
 
-check = st.button("🎯 Check Fit", use_container_width=True, type="primary",
-                   disabled=not (resume_file and jd_text.strip()))
+check = st.button("🎯 Analyze", use_container_width=True, type="primary")
 
 if check:
-    resume_text = _extract_text(resume_file)
-    if not resume_text.strip():
-        st.error("Couldn't extract any text from that resume file.")
+    if not resume_file:
+        st.warning("Upload a resume first.")
+    elif not (jd_file or jd_text.strip()):
+        st.warning("Upload a JD file or paste the job description text.")
     else:
-        with st.spinner("Scoring fit…"):
-            predictions = predict(resume_text, jd_text)
+        resume_text = _extract_text(resume_file)
+        jd_source = "\n\n".join(t for t in [_extract_text(jd_file) if jd_file else "", jd_text] if t.strip())
+        if not resume_text.strip():
+            st.error("Couldn't extract any text from that resume file.")
+        elif not jd_source.strip():
+            st.error("Couldn't extract any text from that JD file.")
+        else:
+            with st.spinner("Scoring fit…"):
+                predictions = predict(resume_text, jd_source)
 
-        st.divider()
+            st.divider()
 
-        top_label, top_conf = max(predictions, key=lambda p: p[1])
-        kind, emoji = _verdict_style(top_label)
-        getattr(st, kind)(f"### {emoji} {top_label} — {top_conf:.1%} confidence")
+            top_label, top_conf = max(predictions, key=lambda p: p[1])
+            kind, emoji = _verdict_style(top_label)
+            getattr(st, kind)(f"### {emoji} {top_label} — {top_conf:.1%} confidence")
 
-        st.subheader("Class probabilities")
-        for label, conf in predictions:
-            col_a, col_b = st.columns([3, 1])
-            with col_a:
-                st.progress(conf, text=label)
-            with col_b:
-                st.write(f"**{conf:.1%}**")
+            st.subheader("Class probabilities")
+            for label, conf in predictions:
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    st.progress(conf, text=label)
+                with col_b:
+                    st.write(f"**{conf:.1%}**")
 
 st.divider()
 st.caption(

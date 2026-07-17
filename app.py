@@ -109,6 +109,12 @@ def _verdict_style(top_label: str):
     return {"No Fit": ("error", "🚨"), "Potential Fit": ("warning", "🟡"), "Good Fit": ("success", "✅")}[top_label]
 
 
+# Below this margin between the top-1 and top-2 class, treat it as a toss-up rather than a
+# confident verdict -- a 50.8% vs 44.9% split is the model genuinely unsure, not "leaning
+# Potential Fit," and showing a bold single-class banner in that case is misleading.
+UNCERTAIN_MARGIN = 0.15
+
+
 # ── UI ──────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="ResuMatch", page_icon="🎯", layout="centered")
@@ -165,9 +171,19 @@ if check:
 
             st.divider()
 
-            top_label, top_conf = max(predictions, key=lambda p: p[1])
-            kind, emoji = _verdict_style(top_label)
-            getattr(st, kind)(f"### {emoji} {top_label} — {top_conf:.1%} confidence")
+            ranked = sorted(predictions, key=lambda p: p[1], reverse=True)
+            top_label, top_conf = ranked[0]
+            second_label, second_conf = ranked[1]
+
+            if top_conf - second_conf < UNCERTAIN_MARGIN:
+                st.info(
+                    f"### 🤔 Close call — {top_label} ({top_conf:.1%}) vs {second_label} ({second_conf:.1%})\n\n"
+                    "The model can't confidently tell these two apart for this resume/JD pairing. "
+                    "Treat this as a toss-up, not a verdict."
+                )
+            else:
+                kind, emoji = _verdict_style(top_label)
+                getattr(st, kind)(f"### {emoji} {top_label} — {top_conf:.1%} confidence")
 
             st.subheader("Class probabilities")
             for label, conf in predictions:

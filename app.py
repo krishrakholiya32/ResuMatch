@@ -10,11 +10,18 @@ guarantee of interview success, and not a substitute for a human reviewer.
 """
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
 import streamlit as st
 from tokenizers import Tokenizer
+
+_FOCUS_STOPWORDS = {
+    "a", "an", "the", "is", "it", "only", "for", "and", "or", "of", "to", "in", "on",
+    "area", "areas", "from", "this", "that", "with", "please", "just", "also",
+    "focus", "consider", "part", "parts", "section", "sections", "relevant",
+}
 
 MODEL_PATH = Path("models/resume_fit_distilbert.onnx")
 TOKENIZER_PATH = Path("models/tokenizer.json")
@@ -57,6 +64,26 @@ def _extract_text(uploaded) -> str:
         doc = Document(uploaded)
         return "\n".join(p.text for p in doc.paragraphs)
     return uploaded.read().decode("utf-8", errors="ignore")
+
+
+def _filter_jd_by_focus(jd_text: str, focus: str) -> tuple[str, bool]:
+    """Keyword filter, not language understanding: pulls out JD sentences/lines containing
+    any word from `focus` (e.g. "AI ML and Python" -> keywords {ai, ml, python}). Not an LLM,
+    so it can't interpret nuanced instructions -- only literal keyword matches. Returns
+    (filtered_text, matched) -- falls back to the full JD if nothing matched, since a
+    misspelled or obscure keyword shouldn't silently produce an empty/broken JD.
+    """
+    keywords = [w for w in re.findall(r"[A-Za-z][A-Za-z0-9+#.]*", focus) if w.lower() not in _FOCUS_STOPWORDS]
+    if not keywords:
+        return jd_text, False
+
+    pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
+    lines = re.split(r"(?<=[.!?])\s+|\n+", jd_text)
+    matched_lines = [line for line in lines if pattern.search(line)]
+
+    if not matched_lines:
+        return jd_text, False
+    return "\n".join(matched_lines), True
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:
@@ -130,7 +157,10 @@ with st.expander("ℹ️ About this model & limitations"):
         "averaging across chunks, but chunks past the first are somewhat out-of-distribution "
         "for the model (it was only trained on front-of-document text)\n"
         "- A text-similarity signal, not a hiring decision — always tailor your actual application\n"
-        "- Trained on English-language resumes/JDs only"
+        "- Trained on English-language resumes/JDs only\n"
+        "- The \"focus on\" field is **keyword matching, not an instruction the model understands** "
+        "— this isn't an LLM, so it can't reason about what you type. It just keeps JD lines "
+        "containing those literal words (e.g. \"AI ML Python\" keeps lines mentioning those terms)"
     )
 
 col1, col2 = st.columns(2)
@@ -139,6 +169,11 @@ with col1:
 with col2:
     jd_file = st.file_uploader("Upload the JD (optional)", type=["pdf", "docx", "txt"])
     jd_text = st.text_area("...or paste the job description", height=150, placeholder="Paste the full JD text here…")
+
+focus_text = st.text_input(
+    "Focus on specific areas (optional)",
+    placeholder="e.g. AI, ML, Python — keeps only JD lines mentioning these words",
+)
 
 check = st.button("🎯 Analyze", use_container_width=True, type="primary")
 
@@ -155,6 +190,13 @@ if check:
         elif not jd_source.strip():
             st.error("Couldn't extract any text from that JD file.")
         else:
+            if focus_text.strip():
+                jd_source, matched = _filter_jd_by_focus(jd_source, focus_text)
+                if matched:
+                    st.caption(f"🔎 Filtered JD to lines matching: {focus_text.strip()}")
+                else:
+                    st.caption(f"⚠️ No JD lines matched \"{focus_text.strip()}\" — scoring against the full JD instead")
+
             with st.spinner("Scoring fit…"):
                 predictions = predict(resume_text, jd_source)
 

@@ -8,8 +8,8 @@ A Streamlit web app that scores how well a resume matches a job description — 
 
 **[🚀 Live Demo → resumatch-zrik.streamlit.app](https://resumatch-zrik.streamlit.app/)**
 
-> See [Model Performance](#-model-performance) below — including a real data-leakage finding
-> worth reading before trusting the headline number.
+> See [Model Performance](#-model-performance) below — a real data-leakage bug was found,
+> fixed, and the model retrained; the story's worth reading, not just the number.
 
 ---
 
@@ -62,28 +62,35 @@ actual application.
 
 | Metric | Value |
 |--------|-------|
-| Test macro-F1 (deployed int8 model) | **0.372** |
-| Test macro-F1 (fp32, pre-quantization) | 0.387 |
-| Val macro-F1 (during training — inflated, see below) | 0.647 |
+| Test macro-F1 (deployed int8 model) | **0.410** |
+| Test macro-F1 (fp32, pre-quantization) | 0.394 |
+| Val macro-F1 (properly group-split, tracks test closely) | 0.499 |
 | Naive "always predict majority class" baseline | ~0.22 |
 | Model | DistilBERT, int8-quantized ONNX (67MB) |
-| Training data | 5,304 rows (Kaggle CPU, ~99 min/epoch, 4 epochs) |
+| Training data | 5,463 rows (Kaggle CPU, ~166 min/epoch, 4 epochs, best checkpoint = epoch 3) |
 | Test data | 1,759 rows, held out by the dataset's original authors |
 
-**A genuine finding, not just a caveat:** during training, validation macro-F1 climbed to 0.647 —
-but the real held-out test score is only 0.372. The gap isn't a bug; it's leakage baked into how
-the source dataset is structured. The published `train.csv` only contains **279 unique job
-descriptions** reused across 5,304 rows (each JD paired with many different resumes). My val split
-was a random 15% slice of `train.csv`, so **231 of its 232 unique job descriptions had already been
-seen during training** (just paired with a different resume) — val was measuring "generalize to a
-new resume against an already-seen JD," an easier task than the real one. The dataset's official
-`test.csv`, by contrast, shares **zero job descriptions** with train — a genuinely unseen-JD
-evaluation, which is what the deployed model actually faces (a user pasting a JD it's never seen).
+**Found a bug, fixed it, retrained — not just a caveat.** The first version of this model hit a
+val macro-F1 of 0.647 during training, but scored only 0.372/0.387 on the real held-out test
+set. That gap wasn't noise; it was leakage baked into how the dataset is structured. The
+published `train.csv` only contains **279 unique job descriptions** reused across 5,304 rows
+(each JD paired with many different resumes). A naive random row-level val split put **231 of
+232 val job descriptions into train too** (just paired with a different resume) — val was
+measuring "generalize to a new resume against an already-seen JD," an easier task than the
+real one, and useless as a signal for picking the best checkpoint during training.
 
-0.372 macro-F1 is real, above-baseline signal (~1.7x the naive majority-class baseline) but modest
-— treat this as an honest first pass, not a polished production classifier. A proper fix would
-re-split validation by job description (group-based split, no JD overlap with train) so the
-training-time metric reflects true generalization instead of this optimistic number.
+**The fix:** [`prepare_dataset.py`](training/scripts/prepare_dataset.py) now uses a
+**group-split** (`GroupShuffleSplit` on `job_description_text`) so val's job descriptions never
+overlap train's — matching how the official `test.csv` is already structured. Retraining with
+this fix immediately paid off: **val macro-F1 correctly caught overfitting after epoch 3**
+(train macro-F1 kept climbing to 0.71 by epoch 4, but honest val *dropped*), something the old
+leaky val could never see since it just climbed every epoch. Selecting the true best checkpoint
+(epoch 3, not epoch 4) instead of just taking whatever the last epoch happened to be pushed the
+real test score from **0.372 → 0.410** — a genuine improvement, not just a more honest number.
+
+0.410 macro-F1 is real, above-baseline signal (~1.9x the naive majority-class baseline) but still
+modest — treat this as an honest, properly-validated first pass, not a polished production
+classifier.
 
 ---
 

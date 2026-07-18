@@ -26,6 +26,14 @@ A Streamlit web app that scores how well a resume matches a job description — 
 
 ---
 
+## Demo
+
+![ResuMatch Demo](screenshots/demo.gif)
+
+Try it live at **[resumatch-zrik.streamlit.app](https://resumatch-zrik.streamlit.app/)**
+
+---
+
 ## ✨ Features
 
 - 📄 Upload a resume (PDF / DOCX / TXT); upload the JD too, or paste its text (or both)

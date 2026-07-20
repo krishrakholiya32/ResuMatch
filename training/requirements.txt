@@ -1,7 +1,9 @@
-torch
+tensorflow
+keras-hub
+tf2onnx
 transformers
+onnx
 pandas
 scikit-learn
-onnx
 onnxruntime
 pyyaml

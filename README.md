@@ -60,9 +60,9 @@ actual application.
 | [Streamlit](https://streamlit.io) | Web app framework |
 | DistilBERT (ONNX, int8-quantized) | Resume/JD fit classification |
 | [ONNX Runtime](https://onnxruntime.ai) | CPU inference |
-| [tokenizers](https://github.com/huggingface/tokenizers) | Lightweight tokenization (no torch at inference) |
+| [tokenizers](https://github.com/huggingface/tokenizers) | Lightweight tokenization (no TensorFlow at inference) |
 | pdfplumber / python-docx | Resume text extraction |
-| PyTorch + transformers | Training (Kaggle GPU) |
+| TensorFlow/Keras + transformers | Training (Kaggle GPU) |
 
 ---
 
@@ -70,12 +70,12 @@ actual application.
 
 | Metric | Value |
 |--------|-------|
-| Test macro-F1 (deployed int8 model) | **0.410** |
-| Test macro-F1 (fp32, pre-quantization) | 0.394 |
-| Val macro-F1 (properly group-split, tracks test closely) | 0.499 |
+| Test macro-F1 (deployed int8 model) | **0.384** |
+| Test macro-F1 (fp32, pre-quantization) | 0.387 |
+| Val macro-F1 (properly group-split, tracks test closely) | 0.422 |
 | Naive "always predict majority class" baseline | ~0.22 |
-| Model | DistilBERT, int8-quantized ONNX (67MB) |
-| Training data | 5,463 rows (Kaggle CPU, ~166 min/epoch, 4 epochs, best checkpoint = epoch 3) |
+| Model | DistilBERT, int8-quantized ONNX (~69MB) |
+| Training data | 5,463 rows (Kaggle CPU, ~144 min/epoch, 4 epochs, best checkpoint = epoch 4) |
 | Test data | 1,759 rows, held out by the dataset's original authors |
 
 **Found a bug, fixed it, retrained — not just a caveat.** The first version of this model hit a
@@ -94,9 +94,13 @@ this fix immediately paid off: **val macro-F1 correctly caught overfitting after
 (train macro-F1 kept climbing to 0.71 by epoch 4, but honest val *dropped*), something the old
 leaky val could never see since it just climbed every epoch. Selecting the true best checkpoint
 (epoch 3, not epoch 4) instead of just taking whatever the last epoch happened to be pushed the
-real test score from **0.372 → 0.410** — a genuine improvement, not just a more honest number.
+real test score from **0.372 → 0.410** in that original PyTorch training run — a genuine
+improvement, not just a more honest number. The model was later retrained on TensorFlow/Keras
+(see the Tech Stack section above) using the same fixed, group-split data pipeline; that run's
+val macro-F1 kept improving through all 4 epochs (no overfitting this time), landing at a real
+test macro-F1 of 0.384 — the number currently deployed, per the table above.
 
-0.410 macro-F1 is real, above-baseline signal (~1.9x the naive majority-class baseline) but still
+0.384 macro-F1 is real, above-baseline signal (~1.7x the naive majority-class baseline) but still
 modest — treat this as an honest, properly-validated first pass, not a polished production
 classifier.
 
@@ -111,9 +115,9 @@ cd training/scripts
 python prepare_dataset.py --output_dir /kaggle/working/data
 python train.py --config ../configs/train_config.yaml
 python evaluate.py --config ../configs/train_config.yaml \
-    --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best
+    --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best.keras
 python export_model.py \
-    --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best \
+    --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best.keras \
     --output ../../models/resume_fit_distilbert.onnx
 ```
 

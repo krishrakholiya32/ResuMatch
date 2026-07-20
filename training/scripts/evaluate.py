@@ -2,20 +2,21 @@
 
 Usage:
     python evaluate.py --config ../configs/train_config.yaml \
-        --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best
+        --checkpoint /kaggle/working/runs/resumefit_distilbert_v1/checkpoints/best.keras
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
+import keras
 import pandas as pd
-import torch
+import tensorflow as tf
 import yaml
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
-from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
+from transformers import DistilBertTokenizerFast
 
-from train import LABELS, ResumeFitDataset, collate, select_device
+from train import LABELS, configure_device, make_dataset
 
 
 def main():
@@ -28,23 +29,21 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    device = select_device()
+    configure_device()
 
-    tokenizer = DistilBertTokenizerFast.from_pretrained(args.checkpoint)
-    model = DistilBertForSequenceClassification.from_pretrained(args.checkpoint).to(device).eval()
+    tokenizer = DistilBertTokenizerFast.from_pretrained(cfg["model_name"])
+    model = keras.models.load_model(args.checkpoint)
 
     df = pd.read_csv(Path(cfg["data_dir"]) / f"{args.split}.csv")
-    ds = ResumeFitDataset(df, tokenizer, cfg["resume_max_tokens"], cfg["jd_max_tokens"])
-    collate_fn = lambda batch: collate(batch, tokenizer.pad_token_id)
-    loader = torch.utils.data.DataLoader(ds, batch_size=cfg["batch_size"], shuffle=False, collate_fn=collate_fn)
+    labels = [LABELS.index(label) for label in df["label"]]
+    ds = make_dataset(df, labels, tokenizer, cfg["resume_max_tokens"], cfg["jd_max_tokens"],
+                       cfg["batch_size"], shuffle=False)
 
     all_labels, all_preds = [], []
-    with torch.no_grad():
-        for batch in loader:
-            logits = model(input_ids=batch["input_ids"].to(device),
-                            attention_mask=batch["attention_mask"].to(device)).logits
-            all_preds.extend(logits.argmax(dim=1).cpu().numpy())
-            all_labels.extend(batch["label"].numpy())
+    for inputs, batch_labels in ds:
+        logits = model(inputs, training=False)
+        all_preds.extend(tf.argmax(logits, axis=1).numpy())
+        all_labels.extend(batch_labels.numpy())
 
     macro_f1 = f1_score(all_labels, all_preds, average="macro")
     print(f"split={args.split} n={len(all_labels)} macro_f1={macro_f1:.4f}")

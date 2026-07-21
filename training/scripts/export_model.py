@@ -56,7 +56,7 @@ from tf2onnx.convert import tensor_names_from_structed
 from tf2onnx.tfonnx import process_tf_graph
 from transformers import DistilBertTokenizerFast
 
-LABELS = ["No Fit", "Potential Fit", "Good Fit"]
+LABELS = ["No Fit", "Fit"]  # Potential Fit + Good Fit merged -- see prepare_dataset.py
 
 
 def softmax(x: np.ndarray) -> np.ndarray:

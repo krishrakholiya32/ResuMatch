@@ -1,9 +1,11 @@
 """ResuMatch — Resume <-> Job Description fit checker, Streamlit app.
 
-Scores how well a resume matches a job description across 3 classes
-(No Fit / Potential Fit / Good Fit) using a self-trained DistilBERT
-classifier, fine-tuned on the cnamuangtoun/resume-job-description-fit
-dataset (8,000 real resume-JD pairs).
+Scores how well a resume matches a job description (No Fit / Fit) using a
+self-trained DistilBERT classifier, fine-tuned on the
+cnamuangtoun/resume-job-description-fit dataset (8,000 real resume-JD pairs).
+Binary, not the dataset's original 3-way label -- Potential Fit and Good Fit
+lead to the same real action (apply), so they're merged into one Fit class;
+see training/scripts/prepare_dataset.py for the full rationale.
 
 Scope: text-based fit scoring from a trained classifier — not a
 guarantee of interview success, and not a substitute for a human reviewer.
@@ -106,7 +108,7 @@ def predict(resume_text: str, jd_text: str) -> list[tuple[str, float]]:
 
 
 def _verdict_style(top_label: str):
-    return {"No Fit": ("error", "🚨"), "Potential Fit": ("warning", "🟡"), "Good Fit": ("success", "✅")}[top_label]
+    return {"No Fit": ("error", "🚨"), "Fit": ("success", "✅")}[top_label]
 
 
 # Below this margin between the top-1 and top-2 class, treat it as a toss-up rather than a

@@ -1,8 +1,9 @@
-"""Fine-tune DistilBERT as a 3-class resume<->job-description fit classifier.
+"""Fine-tune DistilBERT as a binary (No Fit / Fit) resume<->job-description fit classifier.
 
 Single-phase full fine-tune (unlike the image projects' freeze/unfreeze recipe --
 transformer fine-tuning conventionally trains all layers at a low LR from the start).
-Class-weighted loss handles the label imbalance (~50% No Fit / 25% / 25%).
+Class-weighted loss handles the label imbalance (~50% No Fit / 50% Fit after merging
+Potential Fit + Good Fit -- see prepare_dataset.py for why).
 
 TensorFlow/Keras via KerasHub (previously PyTorch via HuggingFace Transformers).
 HuggingFace deprecated and is removing TensorFlow support from `transformers` (the TF model
@@ -34,7 +35,7 @@ from sklearn.metrics import f1_score
 from sklearn.utils.class_weight import compute_class_weight
 from transformers import DistilBertTokenizerFast
 
-LABELS = ["No Fit", "Potential Fit", "Good Fit"]
+LABELS = ["No Fit", "Fit"]  # Potential Fit + Good Fit merged -- see prepare_dataset.py
 KERAS_HUB_PRESET = "distil_bert_base_en_uncased"
 
 
@@ -45,17 +46,14 @@ def set_seed(seed: int):
 
 
 def configure_device() -> str:
-    """Enable memory growth on any visible GPU. Unlike the PyTorch version this replaced,
-    no compute-capability fallback is needed: TensorFlow's prebuilt pip wheels are compiled
-    for a broad compute-capability range (including Kaggle's older P100s, sm_60), whereas
-    recent PyTorch wheels dropped compiled-kernel support for those and needed an explicit
-    CPU fallback to avoid crashing."""
+    """CPU-only, deliberately -- hides any visible GPU from TensorFlow instead of using one.
+    Keeps runs from silently depending on GPU availability (or eating into a limited Kaggle
+    GPU-hours quota) even in an environment where one happens to be attached."""
     gpus = tf.config.list_physical_devices("GPU")
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    device = "GPU" if gpus else "CPU"
-    print(f"device: {device} ({len(gpus)} visible)")
-    return device
+    if gpus:
+        tf.config.set_visible_devices([], "GPU")
+    print(f"device: CPU ({len(gpus)} GPU(s) hidden)")
+    return "CPU"
 
 
 def encode_pair(tokenizer, resume_text: str, jd_text: str, resume_max_tokens: int, jd_max_tokens: int) -> list[int]:

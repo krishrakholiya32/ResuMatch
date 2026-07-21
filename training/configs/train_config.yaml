@@ -9,7 +9,8 @@ max_seq_len: 512
 
 batch_size: 16
 num_workers: 2
-epochs: 4
+epochs: 6   # bumped from 4 -- prior run's val macro-F1 was still climbing at epoch 4, not
+            # yet plateaued; early_stopping_patience below still cuts this short if it converges sooner
 
 lr: 0.00002
 warmup_ratio: 0.1

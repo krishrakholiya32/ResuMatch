@@ -10,6 +10,12 @@ had effectively already seen. Grouping by JD keeps val's job descriptions fully 
 from train's, matching how the official test.csv is already structured, so val now measures
 genuine generalization to unseen JDs instead of "new resume, already-seen JD."
 
+Collapsed to 2 classes: the original 3-way label is merged to No Fit / Fit (Potential Fit and
+Good Fit combined). This isn't just a score-boosting move -- "Potential Fit" and "Good Fit"
+lead to the same real user action (apply), so the 3-way split wasn't adding decision-relevant
+signal, just a fuzzier boundary to get wrong. Merging also happens to roughly balance the
+classes (original label mix is ~50/25/25), which trains more stably too.
+
 Usage (Kaggle notebook, internet enabled):
     python prepare_dataset.py --output_dir /kaggle/working/data
 """
@@ -26,8 +32,11 @@ from sklearn.model_selection import GroupShuffleSplit
 
 REPO_ID = "cnamuangtoun/resume-job-description-fit"
 
-# Fixed order (not alphabetical) so the label is ordinal: index reflects fit strength.
-LABELS = ["No Fit", "Potential Fit", "Good Fit"]
+# Raw labels as published by the dataset -- validated against before merging, so a change in
+# the source data's label set doesn't silently pass through the merge as a new class.
+RAW_LABELS = ["No Fit", "Potential Fit", "Good Fit"]
+LABEL_MERGE_MAP = {"No Fit": "No Fit", "Potential Fit": "Fit", "Good Fit": "Fit"}
+LABELS = ["No Fit", "Fit"]
 
 
 def download_csv(filename: str, retries: int = 5, backoff_seconds: float = 5.0) -> pd.DataFrame:
@@ -63,7 +72,10 @@ def main():
     test = download_csv("test.csv")
     print(f"downloaded: train={len(full_train)} test={len(test)}")
 
-    assert set(full_train["label"].unique()) <= set(LABELS), "unexpected label values"
+    assert set(full_train["label"].unique()) <= set(RAW_LABELS), "unexpected raw label values"
+    assert set(test["label"].unique()) <= set(RAW_LABELS), "unexpected raw label values"
+    full_train["label"] = full_train["label"].map(LABEL_MERGE_MAP)
+    test["label"] = test["label"].map(LABEL_MERGE_MAP)
 
     splitter = GroupShuffleSplit(n_splits=1, test_size=args.val_size, random_state=args.seed)
     train_idx, val_idx = next(splitter.split(full_train, groups=full_train["job_description_text"]))

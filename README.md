@@ -72,7 +72,7 @@ actual application.
 
 | Metric | Value |
 |--------|-------|
-| Test macro-F1 (deployed int8 model) | **0.556** |
+| Test macro-F1 (deployed int8 model, val-tuned threshold) | **0.576** |
 | Test macro-F1 (fp32, pre-quantization) | 0.565 |
 | Val macro-F1 (properly group-split, tracks test closely) | 0.612 (epoch 2, best) |
 | Naive "always predict majority class" baseline | ~0.34 |
@@ -113,8 +113,13 @@ genuine improvement, not just a more honest number.
    both large, genuine jumps over every prior version — not a metric-gaming artifact, since the
    naive majority-class baseline moved too (~0.22 → ~0.34 for this near-balanced split), and
    0.556 is still ~1.6x that baseline.
+3. Tuned the decision threshold on the val set instead of using the default 0.5 argmax. At 0.5,
+   the model measurably over-predicted `Fit` (No Fit recall 0.37 vs Fit recall 0.78 on test) —
+   raising the bar to `P(Fit) > 0.54` rebalances recall *and* improves test macro-F1 (0.556 →
+   0.576), picked on val and verified independently on test so it isn't just fit to look good on
+   one split. Lives in `app.py`'s `FIT_THRESHOLD` constant, not the model weights.
 
-0.556 macro-F1 is real, above-baseline signal (~1.6x the naive majority-class baseline) but still
+0.576 macro-F1 is real, above-baseline signal (~1.7x the naive majority-class baseline) but still
 modest — treat this as an honest, properly-validated model, not a polished production
 classifier.
 

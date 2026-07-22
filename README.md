@@ -72,13 +72,13 @@ actual application.
 
 | Metric | Value |
 |--------|-------|
-| Test macro-F1 (deployed int8 model, val-tuned threshold) | **0.576** |
-| Test macro-F1 (fp32, pre-quantization) | 0.565 |
-| Val macro-F1 (properly group-split, tracks test closely) | 0.612 (epoch 2, best) |
+| Test macro-F1 (deployed int8 model, default 0.5 threshold) | **0.631** |
+| Test macro-F1 (fp32, pre-quantization) | 0.620 |
+| Val macro-F1 (best, epoch 6) | 0.676 |
 | Naive "always predict majority class" baseline | ~0.34 |
 | Model | DistilBERT, int8-quantized ONNX (~65MB) |
-| Training data | 5,463 rows (Kaggle, CPU-only by design, ~159 min/epoch, early-stopped after epoch 4) |
-| Test data | 1,759 rows, held out by the dataset's original authors |
+| Training data | 5,429 rows (35 confirmed-mislabeled rows excluded after a manual audit; Kaggle, CPU-only by design) |
+| Test data | 1,759 rows, held out by the dataset's original authors, never cleaned or touched |
 
 **Found a bug, fixed it, retrained — not just a caveat.** The first version of this model hit a
 val macro-F1 of 0.647 during training, but scored only 0.372/0.387 on the real held-out test
@@ -115,13 +115,26 @@ genuine improvement, not just a more honest number.
    0.556 is still ~1.6x that baseline.
 3. Tuned the decision threshold on the val set instead of using the default 0.5 argmax. At 0.5,
    the model measurably over-predicted `Fit` (No Fit recall 0.37 vs Fit recall 0.78 on test) —
-   raising the bar to `P(Fit) > 0.54` rebalances recall *and* improves test macro-F1 (0.556 →
-   0.576), picked on val and verified independently on test so it isn't just fit to look good on
-   one split. Lives in `app.py`'s `FIT_THRESHOLD` constant, not the model weights.
+   raising the bar to `P(Fit) > 0.54` rebalanced recall *and* improved test macro-F1 (0.556 →
+   0.576). This turned out to be a workaround for label noise, not a permanent fix — see below.
+4. Ran a real data-quality investigation instead of accepting 0.576 as a noise ceiling. A blind
+   manual audit (reading resume/JD pairs without seeing their labels, then comparing) found a
+   genuine disagreement rate with the dataset's own labels — some rows were just mislabeled, not
+   ambiguous. Rather than relabel by hand at scale, a TF-IDF cosine-similarity signal between
+   resume and JD text (label-independent, so it can't leak the "right" answer) surfaced candidate
+   mismatches; every candidate was hand-verified before exclusion — nothing was dropped
+   automatically. This produced 35 confirmed-mislabeled rows, excluded from **train+val only** by
+   content hash (`prepare_dataset.py`'s `EXCLUDED_PAIR_HASHES`) — `test.csv` was never touched, so
+   the before/after comparison stays apples-to-apples. Retraining on the cleaned data pushed test
+   macro-F1 from 0.576 → **0.631**, and — tellingly — fixed the recall imbalance from point 3 as a
+   side effect (No Fit/Fit recall now 0.64/0.62 at the plain 0.5 threshold, no tuning needed): the
+   skew in point 3 was downstream of noisy labels, not a property of the task itself. `app.py`'s
+   `FIT_THRESHOLD` is back to the default 0.5.
 
-0.576 macro-F1 is real, above-baseline signal (~1.7x the naive majority-class baseline) but still
-modest — treat this as an honest, properly-validated model, not a polished production
-classifier.
+0.631 macro-F1 is real, above-baseline signal (~1.9x the naive majority-class baseline) and a
+genuine improvement from actually fixing data quality, not just re-tuning around it — but it's
+still a modest number. Treat this as an honest, properly-validated model, not a polished
+production classifier.
 
 ---
 

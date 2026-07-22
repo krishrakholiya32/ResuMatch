@@ -111,12 +111,11 @@ def _verdict_style(top_label: str):
     return {"No Fit": ("error", "🚨"), "Fit": ("success", "✅")}[top_label]
 
 
-# Decision threshold picked on the val set, not the default 0.5 argmax -- P(Fit) > 0.5 measurably
-# skewed toward over-predicting Fit on the real test set (No Fit recall 0.37 vs Fit recall 0.78).
-# 0.54 rebalances recall *and* improves test macro-F1 (0.556 -> 0.576), verified independently on
-# held-out val (where it was picked) and test (where it wasn't) splits -- not just tuned to look
-# good on one set.
-FIT_THRESHOLD = 0.54
+# Plain 0.5 argmax. An earlier model version needed a tuned threshold to fix a recall skew
+# (No Fit recall 0.37 vs Fit recall 0.78) -- after cleaning ~35 mislabeled rows out of
+# train+val, that skew is gone (No Fit/Fit recall now 0.64/0.62 at t=0.5), and a val-tuned
+# threshold (t=0.52) no longer beats plain 0.5 on test, so there's nothing left to tune.
+FIT_THRESHOLD = 0.5
 
 # Half-width of the "close call" band around FIT_THRESHOLD -- a P(Fit) of 0.58 against a 0.54 bar
 # is the model barely clearing the threshold, not a confident verdict.
@@ -137,7 +136,8 @@ with st.expander("ℹ️ About this model & limitations"):
     st.markdown(
         "- Self-trained **DistilBERT** classifier fine-tuned on 8,000 real resume-JD pairs "
         "([cnamuangtoun/resume-job-description-fit](https://huggingface.co/datasets/cnamuangtoun/resume-job-description-fit))\n"
-        "- Binary (No Fit / Fit) scoring with class-weighted loss and a val-tuned decision threshold\n\n"
+        "- Binary (No Fit / Fit) scoring with class-weighted loss, trained on a manually "
+        "audited and cleaned version of the dataset\n\n"
         "**Important limitations:**\n"
         "- The model itself only sees 350 resume tokens / 150 JD tokens per pass (DistilBERT's "
         "512-token limit) — the app works around this by chunking your full resume/JD and "
